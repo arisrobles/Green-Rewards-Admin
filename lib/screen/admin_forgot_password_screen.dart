@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:mailer/mailer.dart';
+import 'package:mailer/smtp_server.dart';
+import 'package:random_string/random_string.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AdminForgotPasswordScreen extends StatefulWidget {
   const AdminForgotPasswordScreen({super.key});
@@ -11,15 +15,86 @@ class AdminForgotPasswordScreen extends StatefulWidget {
 class _AdminForgotPasswordScreenState extends State<AdminForgotPasswordScreen> {
   final TextEditingController _emailController = TextEditingController();
   bool _isLoading = false;
-  String? _message;
+  String? _errorText;
+  final _emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
 
-  void _resetPassword() async {
-    setState(() { _isLoading = true; _message = null; });
-    await Future.delayed(const Duration(seconds: 1));
+  Future<void> _sendResetEmail(String email, String resetCode) async {
+    final smtpServer = gmail('arisrobles07@gmail.com', 'mgti dcwv vuom npcr');
+
+    final message = Message()
+      ..from = const Address('arisrobles07@gmail.com', 'Green Rewards Admin')
+      ..recipients.add(email)
+      ..subject = 'Password Reset Code'
+      ..html = '''
+        <h2>Password Reset Request</h2>
+        <p>Your password reset code is: <strong>$resetCode</strong></p>
+        <p>Please enter this code in the Green Rewards Admin App to reset your password.</p>
+        <p>This code is valid for 10 minutes. If you did not request a password reset, please ignore this email.</p>
+        <p>Best regards,<br>Green Rewards Team</p>
+      ''';
+
+    try {
+      final sendReport = await send(message, smtpServer);
+      print('Reset email sent: ${sendReport.toString()}');
+    } catch (e) {
+      print('Error sending reset email: $e');
+      throw Exception('Failed to send reset email: $e');
+    }
+  }
+
+  Future<void> _resetPassword() async {
     setState(() {
-      _isLoading = false;
-      _message = 'If this email exists, a reset link has been sent.';
+      _isLoading = true;
+      _errorText = null;
     });
+
+    try {
+      String email = _emailController.text.trim();
+      if (email.isEmpty) {
+        setState(() {
+          _isLoading = false;
+          _errorText = 'Please enter an email address';
+        });
+        return;
+      }
+      if (!_emailRegex.hasMatch(email)) {
+        setState(() {
+          _isLoading = false;
+          _errorText = 'Please enter a valid email address';
+        });
+        return;
+      }
+
+      // Generate a 6-digit reset code
+      final resetCode = randomNumeric(6);
+
+      // Store reset code in Firestore with timestamp
+      await FirebaseFirestore.instance.collection('password_resets').doc(email).set({
+        'resetCode': resetCode,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // Send reset email
+      await _sendResetEmail(email, resetCode);
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        // Navigate to reset password screen with email only
+        Navigator.pushNamed(
+          context,
+          '/admin-reset-password',
+          arguments: {'email': email},
+        );
+      }
+    } catch (e) {
+      print('Error in _resetPassword: $e');
+      setState(() {
+        _isLoading = false;
+        _errorText = 'Failed to send reset email. Please try again.';
+      });
+    }
   }
 
   @override
@@ -97,8 +172,10 @@ class _AdminForgotPasswordScreenState extends State<AdminForgotPasswordScreen> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                       filled: true,
                       fillColor: Colors.grey[100],
+                      errorText: _errorText,
                     ),
                     style: GoogleFonts.poppins(),
+                    keyboardType: TextInputType.emailAddress,
                   ),
                   const SizedBox(height: 28),
                   SizedBox(
@@ -122,7 +199,7 @@ class _AdminForgotPasswordScreenState extends State<AdminForgotPasswordScreen> {
                               ),
                             )
                           : Text(
-                              'Reset Password',
+                              'Send Reset Code',
                               style: GoogleFonts.poppins(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -131,10 +208,6 @@ class _AdminForgotPasswordScreenState extends State<AdminForgotPasswordScreen> {
                             ),
                     ),
                   ),
-                  if (_message != null) ...[
-                    const SizedBox(height: 18),
-                    Text(_message!, style: GoogleFonts.poppins(color: Colors.green[700], fontSize: 15)),
-                  ],
                   const SizedBox(height: 18),
                   GestureDetector(
                     onTap: () => Navigator.pushReplacementNamed(context, '/admin-login'),
@@ -143,7 +216,6 @@ class _AdminForgotPasswordScreenState extends State<AdminForgotPasswordScreen> {
                       style: GoogleFonts.poppins(
                         color: Colors.green[700],
                         fontSize: 15,
-                        // No underline
                       ),
                     ),
                   ),
@@ -155,4 +227,4 @@ class _AdminForgotPasswordScreenState extends State<AdminForgotPasswordScreen> {
       ),
     );
   }
-} 
+}

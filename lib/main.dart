@@ -10,6 +10,7 @@ import 'screen/admin_profile_screen.dart';
 import 'screen/splash_screen.dart';
 import 'screen/admin_signup_screen.dart';
 import 'screen/admin_forgot_password_screen.dart';
+import 'screen/admin_reset_password_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,6 +50,10 @@ class MainApp extends StatelessWidget {
         '/admin-transactions': (context) => const AdminTransactionsScreen(),
         '/report-forum': (context) => const ReportForumScreen(),
         '/admin-profile': (context) => const AdminProfileScreen(),
+        '/admin-reset-password': (context) => const AdminResetPasswordScreen(
+              email: '',
+              verificationCode: '',
+            ),
       },
     );
   }

@@ -59,20 +59,17 @@ class _AdminCredentialsLoginScreenState extends State<AdminCredentialsLoginScree
     });
 
     try {
-      // Sign in with Firebase Authentication
       UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
-      // Check if the user is an admin
       DocumentSnapshot adminDoc = await FirebaseFirestore.instance
           .collection('admins')
           .doc(userCredential.user!.uid)
           .get();
 
       if (!adminDoc.exists) {
-        // If not an admin, sign out and show error
         await FirebaseAuth.instance.signOut();
         setState(() {
           _errorText = 'This account is not authorized as an admin';
@@ -264,7 +261,7 @@ class _AdminCredentialsLoginScreenState extends State<AdminCredentialsLoginScree
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       GestureDetector(
-                        onTap: () => Navigator.pushReplacementNamed(context, '/admin-forgot'),
+                        onTap: () => Navigator.pushNamed(context, '/admin-forgot'),
                         child: Text(
                           'Forgot Password?',
                           style: GoogleFonts.poppins(
