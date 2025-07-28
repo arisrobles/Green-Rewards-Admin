@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:mailer/mailer.dart';
-import 'package:mailer/smtp_server.dart';
-import 'package:random_string/random_string.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AdminForgotPasswordScreen extends StatefulWidget {
@@ -18,31 +16,7 @@ class _AdminForgotPasswordScreenState extends State<AdminForgotPasswordScreen> {
   String? _errorText;
   final _emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
 
-  Future<void> _sendResetEmail(String email, String resetCode) async {
-    final smtpServer = gmail('arisrobles07@gmail.com', 'mgti dcwv vuom npcr');
-
-    final message = Message()
-      ..from = const Address('arisrobles07@gmail.com', 'Green Rewards Admin')
-      ..recipients.add(email)
-      ..subject = 'Password Reset Code'
-      ..html = '''
-        <h2>Password Reset Request</h2>
-        <p>Your password reset code is: <strong>$resetCode</strong></p>
-        <p>Please enter this code in the Green Rewards Admin App to reset your password.</p>
-        <p>This code is valid for 10 minutes. If you did not request a password reset, please ignore this email.</p>
-        <p>Best regards,<br>Green Rewards Team</p>
-      ''';
-
-    try {
-      final sendReport = await send(message, smtpServer);
-      print('Reset email sent: ${sendReport.toString()}');
-    } catch (e) {
-      print('Error sending reset email: $e');
-      throw Exception('Failed to send reset email: $e');
-    }
-  }
-
-  Future<void> _resetPassword() async {
+  Future<void> _sendResetEmail() async {
     setState(() {
       _isLoading = true;
       _errorText = null;
@@ -65,34 +39,51 @@ class _AdminForgotPasswordScreenState extends State<AdminForgotPasswordScreen> {
         return;
       }
 
-      // Generate a 6-digit reset code
-      final resetCode = randomNumeric(6);
+      // Optional: Check for rate limiting in Firestore
+      final doc = await FirebaseFirestore.instance.collection('password_resets').doc(email).get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+        if (createdAt != null && DateTime.now().difference(createdAt).inSeconds < 60) {
+          setState(() {
+            _isLoading = false;
+            _errorText = 'Please wait before requesting another reset email';
+          });
+          return;
+        }
+      }
 
-      // Store reset code in Firestore with timestamp
+      // Send Firebase password reset email to Firebase-hosted web page
+      await FirebaseAuth.instance.sendPasswordResetEmail(
+        email: email,
+        actionCodeSettings: ActionCodeSettings(
+          url: 'https://green-rewards-ae329.firebaseapp.com/__/auth/action?mode=resetPassword',
+          handleCodeInApp: false, // Redirect to Firebase-hosted web page
+        ),
+      );
+
+      // Optional: Store reset request in Firestore for tracking
       await FirebaseFirestore.instance.collection('password_resets').doc(email).set({
-        'resetCode': resetCode,
         'createdAt': FieldValue.serverTimestamp(),
       });
-
-      // Send reset email
-      await _sendResetEmail(email, resetCode);
 
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
-        // Navigate to reset password screen with email only
-        Navigator.pushNamed(
-          context,
-          '/admin-reset-password',
-          arguments: {'email': email},
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Password reset email sent to $email. Check your inbox or spam folder.'),
+            backgroundColor: Colors.green,
+          ),
         );
+        Navigator.pushReplacementNamed(context, '/admin-login');
       }
     } catch (e) {
-      print('Error in _resetPassword: $e');
+      print('Error in _sendResetEmail: $e');
       setState(() {
         _isLoading = false;
-        _errorText = 'Failed to send reset email. Please try again.';
+        _errorText = 'Failed to send reset email: ${e.toString()}';
       });
     }
   }
@@ -163,6 +154,16 @@ class _AdminForgotPasswordScreenState extends State<AdminForgotPasswordScreen> {
                       color: Colors.green[800],
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Enter your email to receive a password reset link',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                   const SizedBox(height: 24),
                   TextField(
                     controller: _emailController,
@@ -181,7 +182,7 @@ class _AdminForgotPasswordScreenState extends State<AdminForgotPasswordScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: _isLoading ? null : _resetPassword,
+                      onPressed: _isLoading ? null : _sendResetEmail,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green[600],
                         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -199,7 +200,7 @@ class _AdminForgotPasswordScreenState extends State<AdminForgotPasswordScreen> {
                               ),
                             )
                           : Text(
-                              'Send Reset Code',
+                              'Send Reset Link',
                               style: GoogleFonts.poppins(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
